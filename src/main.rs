@@ -15,7 +15,7 @@ fn main() {
     match tcp {
         Ok(tcp) => {
             println!("Connected to the server");
-            let session = Session::new();
+            let mut session = Session::new();
             match session {
                 Ok(mut session) => {
                     session.set_tcp_stream(tcp);
@@ -47,7 +47,8 @@ fn main() {
                             let mut stats = Stats::default();
                             match stats.get_all_stats(&mut session) {
                                 Ok(()) => {
-                                    println!("hostname: {}", stats.hostname)
+                                    //println!("mem_total: {}", stats.mem_total);
+                                    println!("{:?}", stats.fs_infos);
                                 }
                                 Err(e) => eprint!("Error: {}", e),
                             };
