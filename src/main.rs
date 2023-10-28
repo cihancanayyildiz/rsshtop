@@ -1,20 +1,30 @@
 use crate::sshconnect::ConnectionType;
 use crate::stats::*;
 use clap::Parser;
+use crossbeam_channel::{bounded, select, tick, Receiver};
 use ssh2::Session;
+use std::env;
 use std::net::TcpStream;
+use std::time::Duration;
 
 mod cli;
 mod sshconnect;
 mod stats;
+fn ctrl_channel() -> Result<Receiver<()>, ctrlc::Error> {
+    let (sender, receiver) = bounded(100);
+    ctrlc::set_handler(move || {
+        let _ = sender.send(());
+    })?;
 
+    Ok(receiver)
+}
 fn main() {
+    env::set_var("RUST_BACKTRACE", "full");
     let cli = cli::Cli::parse();
     let ssh_connection = cli::validate_parameters(&cli);
     let tcp = TcpStream::connect(ssh_connection.hostname);
     match tcp {
         Ok(tcp) => {
-            println!("Connected to the server");
             let session = Session::new();
             match session {
                 Ok(mut session) => {
@@ -36,12 +46,22 @@ fn main() {
                     };
                     match auth {
                         Ok(_) => {
-                            println!("{}", session.authenticated());
+                            let ctrl_c_events = ctrl_channel().unwrap();
+                            let ticks = tick(Duration::from_secs(cli.interval as u64));
                             let mut stats = Stats::default();
-                            match stats.get_all_stats(&session) {
-                                Ok(()) => {}
-                                Err(e) => eprint!("Error: {}", e),
-                            };
+                            loop {
+                                select! {
+                                    recv(ticks) -> _ => {
+                                        if let Ok(()) = stats.get_all_stats(&session){
+                                            println!("{}",stats);
+                                        };
+                                    }
+                                    recv(ctrl_c_events) -> _ => {
+                                        println!("Goodbye!");
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             eprint!("Authentication failed: {}", e);

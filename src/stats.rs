@@ -1,9 +1,14 @@
+use ::time::Duration;
+use colored::Colorize;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt::Display;
 use std::io::Read;
 
-//#[derive(Debug)]
+const ESC: &str = "\x1B[2J\x1B[1;1H"; // Clears the terminal.
+
+#[allow(dead_code)]
 pub struct FileSystemInfo {
     mount_point: String,
     used: u64,
@@ -18,6 +23,7 @@ pub struct NetIntfInfo {
     tx: u64,
 }
 
+#[derive(Default, Debug)]
 pub struct CpuRaw {
     user: u64,
     nice: u64,
@@ -31,7 +37,7 @@ pub struct CpuRaw {
     total: u64,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CpuInfo {
     user: f32,
     nice: f32,
@@ -61,7 +67,42 @@ pub struct Stats {
     pub swap_free: u64,
     pub fs_infos: Vec<FileSystemInfo>,
     pub net_intf: HashMap<String, NetIntfInfo>,
+    pub prev_cpu: CpuRaw,
     pub cpu: CpuInfo,
+}
+impl Display for Stats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}up {}\n\n{}\n\t{} {} {}\n\n{}\n\t{} user, {} sys, {} nice, {} idle, {} iowait, {} hardirq, {} softirq, {} guest\n\n{}\n\t{} running of {} total\n\n{}\n\tfree = {}\n\tused = {}\n\tbuffers = {}\n\tcached = {}\n\tswap = {} free of {}\n\n",
+            ESC,
+            self.hostname.bold().bright_green(),
+            self.format_uptime().bold().bright_cyan(),
+            "Load:".bright_yellow(),
+            self.load1.bold().bright_white(),
+            self.load5.bold().bright_white(),
+            self.load10.bold().bright_white(),
+            "CPU:".bright_yellow(),
+            self.cpu.user.to_string().bold().bright_white(),
+            self.cpu.system.to_string().bold().bright_white(),
+            self.cpu.nice.to_string().bold().bright_white(),
+            self.cpu.idle.to_string().bold().bright_white(),
+            self.cpu.iowait.to_string().bold().bright_white(),
+            self.cpu.irq.to_string().bold().bright_white(),
+            self.cpu.soft_irq.to_string().bold().bright_white(),
+            self.cpu.guest.to_string().bold().bright_white(),
+            "Processes:".bright_yellow(),
+            self.running_procs.bold().bright_white(),
+            self.total_procs.bold().bright_white(),
+            "Memory:".bright_yellow(),
+            format_bytes(self.mem_free).bold().bright_white(),
+            format_bytes(self.mem_total - self.mem_free - self.mem_buffers - self.mem_cached).bold().bright_white(),
+            format_bytes(self.mem_buffers).bold().bright_white(),
+            format_bytes(self.mem_cached).bold().bright_white(),
+            format_bytes(self.swap_free).bold().bright_white(),
+            format_bytes(self.swap_total).bold().bright_white(),
+        )
+    }
 }
 
 impl Stats {
@@ -73,18 +114,62 @@ impl Stats {
         self.get_fs_info(session)?;
         self.get_interfaces(session)?;
         self.get_interface_info(session)?;
-
+        self.get_cpu(session)?;
         Ok(())
     }
 
-    pub fn get_uptime(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
+    fn get_uptime(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let parts = run_command(session, "/bin/cat /proc/uptime")?;
         // todo! split_whitespace
-        let uptime_vec = parts.trim_end().split(' ').collect::<Vec<_>>();
+        let uptime_vec = parts.split_whitespace().collect::<Vec<_>>();
         if uptime_vec.len() == 2 {
             self.uptime = uptime_vec[0].parse::<f64>()?;
         }
         Ok(())
+    }
+    fn format_uptime(&self) -> String {
+        let mut duration = self.uptime;
+        duration = duration - (duration % Duration::SECOND.as_seconds_f64());
+
+        let mut days = 0;
+        loop {
+            if duration / 3600.0 > 24.0 {
+                days += 1;
+                duration -= 24.0 * 60.0 * 60.0;
+            } else {
+                break;
+            }
+        }
+        let mut hours = 0;
+        loop {
+            if duration / 3600.0 > 1.0 {
+                hours += 1;
+                duration -= 1.0 * 60.0 * 60.0;
+            } else {
+                break;
+            }
+        }
+        let mut mins = 0;
+        loop {
+            if duration > 1.0 * 60.0 {
+                mins += 1;
+                duration -= 1.0 * 60.0;
+            } else {
+                break;
+            }
+        }
+        let mut res = String::new();
+        if days > 0 {
+            res.push_str(format!("{days}d ").as_str());
+        }
+        if hours > 0 {
+            res.push_str(format!("{hours}h ").as_str());
+        }
+        if mins > 0 {
+            res.push_str(format!("{mins}m ").as_str());
+        }
+        res.push_str(format!("{duration}s ").as_str());
+        res
     }
 
     fn get_hostname(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
@@ -167,6 +252,7 @@ impl Stats {
         Ok(())
     }
 
+    #[allow(clippy::collapsible_else_if)]
     fn get_interfaces(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let interfaces = run_command(session, "/bin/ip -o addr")
             .or_else(|_| run_command(session, "/sbin/ip -o addr"))?;
@@ -231,6 +317,73 @@ impl Stats {
             }
         }
         Ok(())
+    }
+
+    fn get_cpu(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
+        let cpu = run_command(session, "/bin/cat /proc/stat")?;
+        let lines = cpu.lines().collect::<Vec<_>>();
+
+        let mut current_cpu = CpuRaw::default();
+
+        for line in lines {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            if !fields.is_empty() && fields[0] == "cpu" {
+                parse_cpu(&fields, &mut current_cpu);
+                break;
+            }
+        }
+
+        if self.prev_cpu.total == 0 {
+            self.prev_cpu = current_cpu;
+            return Ok(());
+        }
+
+        let total = (current_cpu.total - self.prev_cpu.total) as f32;
+
+        self.cpu.user = (current_cpu.user - self.prev_cpu.user) as f32 / total * 100.0;
+        self.cpu.nice = (current_cpu.nice - self.prev_cpu.nice) as f32 / total * 100.0;
+        self.cpu.system = (current_cpu.system - self.prev_cpu.system) as f32 / total * 100.0;
+        self.cpu.idle = (current_cpu.idle - self.prev_cpu.idle) as f32 / total * 100.0;
+        self.cpu.iowait = (current_cpu.iowait - self.prev_cpu.iowait) as f32 / total * 100.0;
+        self.cpu.irq = (current_cpu.irq - self.prev_cpu.irq) as f32 / total * 100.0;
+        self.cpu.soft_irq = (current_cpu.soft_irq - self.prev_cpu.soft_irq) as f32 / total * 100.0;
+        self.cpu.steal = (current_cpu.steal - self.prev_cpu.steal) as f32 / total * 100.0;
+        self.cpu.guest = (current_cpu.guest - self.prev_cpu.guest) as f32 / total * 100.0;
+
+        self.prev_cpu = current_cpu;
+        Ok(())
+    }
+}
+
+fn format_bytes(val: u64) -> String {
+    if val < 1024 {
+        return format!("{} bytes", val);
+    } else if val < 1024 * 1024 {
+        return format!("{:6.2} KiB", val as f64 / 1024.0);
+    } else if val < 1024 * 1024 * 1024 {
+        return format!("{:6.2} MiB", val as f64 / 1024.0 / 1024.0);
+    } else {
+        return format!("{:6.2} GiB", val as f64 / 1024.0 / 1024.0 / 1024.0);
+    }
+}
+
+fn parse_cpu(fields: &Vec<&str>, cpu: &mut CpuRaw) {
+    for i in 1..fields.len() {
+        if let Ok(val) = (*fields)[i].parse::<u64>() {
+            cpu.total += val;
+            match i {
+                1 => cpu.user = val,
+                2 => cpu.nice = val,
+                3 => cpu.system = val,
+                4 => cpu.idle = val,
+                5 => cpu.iowait = val,
+                6 => cpu.irq = val,
+                7 => cpu.soft_irq = val,
+                8 => cpu.steal = val,
+                9 => cpu.guest = val,
+                _ => continue,
+            }
+        }
     }
 }
 
