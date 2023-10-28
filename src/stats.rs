@@ -357,13 +357,13 @@ impl Stats {
 
 fn format_bytes(val: u64) -> String {
     if val < 1024 {
-        return format!("{} bytes", val);
+        format!("{} bytes", val)
     } else if val < 1024 * 1024 {
-        return format!("{:6.2} KiB", val as f64 / 1024.0);
+        format!("{:6.2} KiB", val as f64 / 1024.0)
     } else if val < 1024 * 1024 * 1024 {
-        return format!("{:6.2} MiB", val as f64 / 1024.0 / 1024.0);
+        format!("{:6.2} MiB", val as f64 / 1024.0 / 1024.0)
     } else {
-        return format!("{:6.2} GiB", val as f64 / 1024.0 / 1024.0 / 1024.0);
+        format!("{:6.2} GiB", val as f64 / 1024.0 / 1024.0 / 1024.0)
     }
 }
 
