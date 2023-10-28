@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct FileSystemInfo {
     mount_point: String,
     used: u64,
     free: u64,
 }
 
+#[derive(Debug)]
 pub struct NetIntfInfo {
     ipv4: String,
     ipv6: String,
@@ -71,11 +72,14 @@ impl Stats {
         self.get_mem_info(session)?;
         self.get_fs_info(session)?;
         self.get_interfaces(session)?;
+        self.get_interface_info(session)?;
+
         Ok(())
     }
 
     pub fn get_uptime(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let parts = run_command(session, "/bin/cat /proc/uptime")?;
+        // todo! split_whitespace
         let uptime_vec = parts.trim_end().split(' ').collect::<Vec<_>>();
         if uptime_vec.len() == 2 {
             self.uptime = uptime_vec[0].parse::<f64>()?;
@@ -90,6 +94,7 @@ impl Stats {
 
     fn get_load(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let parts = run_command(session, "/bin/cat /proc/loadavg")?;
+        // todo! split_whitespace
         let parts_vec = parts.split(' ').collect::<Vec<_>>();
 
         if parts_vec.len() == 5 {
@@ -104,7 +109,7 @@ impl Stats {
 
     fn get_mem_info(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let parts = run_command(session, "/bin/cat /proc/meminfo")?;
-        let lines = parts.split('\n').collect::<Vec<_>>();
+        let lines = parts.lines().collect::<Vec<_>>();
         for line in lines.iter() {
             let parts = line.split_whitespace().collect::<Vec<_>>();
             if parts.len() == 3 {
@@ -130,7 +135,7 @@ impl Stats {
 
     fn get_fs_info(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
         let parts = run_command(session, "/bin/df -B1")?;
-        let lines = parts.split('\n').collect::<Vec<_>>();
+        let lines = parts.lines().collect::<Vec<_>>();
 
         let mut flag = 0;
         for line in lines {
@@ -163,8 +168,68 @@ impl Stats {
     }
 
     fn get_interfaces(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        let lines = run_command(session, "/bin/ip -o addr")?;
-        println!("{}", lines);
+        let interfaces = run_command(session, "/bin/ip -o addr")
+            .or_else(|_| run_command(session, "/sbin/ip -o addr"))?;
+
+        let lines = interfaces.lines().collect::<Vec<_>>();
+        for line in lines {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            if fields.len() >= 4 && (fields[2] == "inet" || fields[2] == "inet6") {
+                let ipv4 = fields[2] == "inet";
+                let int_name = fields[1];
+
+                if let Some(value) = self.net_intf.get_mut(int_name) {
+                    if ipv4 {
+                        value.ipv4 = fields[3].to_string();
+                    } else {
+                        value.ipv6 = fields[3].to_string();
+                    }
+                } else {
+                    if ipv4 {
+                        self.net_intf.insert(
+                            int_name.to_string(),
+                            NetIntfInfo {
+                                ipv4: fields[3].to_string(),
+                                ipv6: String::new(),
+                                rx: u64::default(),
+                                tx: u64::default(),
+                            },
+                        );
+                    } else {
+                        self.net_intf.insert(
+                            int_name.to_string(),
+                            NetIntfInfo {
+                                ipv4: String::new(),
+                                ipv6: fields[3].to_string(),
+                                rx: u64::default(),
+                                tx: u64::default(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_interface_info(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
+        if self.net_intf.is_empty() {
+            return Ok(());
+        }
+        let infos = run_command(session, "/bin/cat /proc/net/dev")?;
+        let lines = infos.lines().collect::<Vec<_>>();
+        for line in lines {
+            let parts = line.split_whitespace().collect::<Vec<_>>();
+            if parts.len() == 17 {
+                let intf = parts[0].trim().trim_matches(':');
+                if let Some(value) = self.net_intf.get_mut(intf) {
+                    let rx = parts[1].parse::<u64>()?;
+                    let tx = parts[9].parse::<u64>()?;
+                    value.rx = rx;
+                    value.tx = tx;
+                }
+            }
+        }
         Ok(())
     }
 }
