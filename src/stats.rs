@@ -72,9 +72,41 @@ pub struct Stats {
 }
 impl Display for Stats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut file_sys = String::new();
+        for fs in &self.fs_infos {
+            file_sys.push_str(
+                format!(
+                    "{}: {} free of {}\n",
+                    fs.mount_point,
+                    format_bytes(fs.free),
+                    format_bytes(fs.used + fs.free)
+                )
+                .as_str(),
+            );
+        }
+
+        let mut net_info = String::new();
+
+        for (key, val) in &self.net_intf {
+            net_info.push_str(format!("\t{} - {}", key, val.ipv4).as_str());
+            if !val.ipv6.is_empty() {
+                net_info.push_str(format!(", {}\n", val.ipv6).as_str());
+            } else {
+                net_info.push('\n');
+            }
+            net_info.push_str(
+                format!(
+                    "\trx = {}, tx = {}\n\n",
+                    format_bytes(val.rx),
+                    format_bytes(val.tx)
+                )
+                .as_str(),
+            );
+        }
+
         write!(
             f,
-            "{}{}up {}\n\n{}\n\t{} {} {}\n\n{}\n\t{} user, {} sys, {} nice, {} idle, {} iowait, {} hardirq, {} softirq, {} guest\n\n{}\n\t{} running of {} total\n\n{}\n\tfree = {}\n\tused = {}\n\tbuffers = {}\n\tcached = {}\n\tswap = {} free of {}\n\n",
+            "{}{}up {}\n\n{}\n\t{} {} {}\n\n{}\n\t{} user, {} sys, {} nice, {} idle, {} iowait, {} hardirq, {} softirq, {} guest\n\n{}\n\t{} running of {} total\n\n{}\n\tfree = {}\n\tused = {}\n\tbuffers = {}\n\tcached = {}\n\tswap = {} free of {}\n\n{}\n\t{}\n{}\n{}\n",
             ESC,
             self.hostname.bold().bright_green(),
             self.format_uptime().bold().bright_cyan(),
@@ -101,6 +133,10 @@ impl Display for Stats {
             format_bytes(self.mem_cached).bold().bright_white(),
             format_bytes(self.swap_free).bold().bright_white(),
             format_bytes(self.swap_total).bold().bright_white(),
+            "Filesystems:".bright_yellow(),
+            file_sys.bold().bright_white(),
+            "Network Interfaces:".bright_yellow(),
+            net_info.bold().bright_white(),
         )
     }
 }
