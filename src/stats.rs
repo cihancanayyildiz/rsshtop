@@ -65,12 +65,12 @@ pub struct Stats {
 
 impl Stats {
     pub fn get_all_stats(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        self.get_uptime(&session)?;
-        self.get_hostname(&session)?;
-        self.get_load(&session)?;
-        self.get_mem_info(&session)?;
-        self.get_fs_info(&session)?;
-        self.get_interfaces(&session)?;
+        self.get_uptime(session)?;
+        self.get_hostname(session)?;
+        self.get_load(session)?;
+        self.get_mem_info(session)?;
+        self.get_fs_info(session)?;
+        self.get_interfaces(session)?;
         Ok(())
     }
 
@@ -79,13 +79,12 @@ impl Stats {
         let uptime_vec = parts.trim_end().split(' ').collect::<Vec<_>>();
         if uptime_vec.len() == 2 {
             self.uptime = uptime_vec[0].parse::<f64>()?;
-            println!("{:?}", self.uptime);
         }
         Ok(())
     }
 
     fn get_hostname(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        self.hostname = run_command(&session, "/bin/hostname -f")?;
+        self.hostname = run_command(session, "/bin/hostname -f")?;
         Ok(())
     }
 
@@ -98,7 +97,7 @@ impl Stats {
             self.load5 = parts_vec[1].to_string();
             self.load10 = parts_vec[2].to_string();
             self.running_procs = parts_vec[3].split('/').collect::<Vec<_>>()[0].to_string();
-            self.total_procs = parts_vec[3].split('/').collect::<Vec<_>>()[1].to_string()
+            self.total_procs = parts_vec[3].split('/').collect::<Vec<_>>()[1].to_string();
         }
         Ok(())
     }
@@ -136,7 +135,7 @@ impl Stats {
         let mut flag = 0;
         for line in lines {
             let parts = line.split_whitespace().collect::<Vec<_>>();
-            let dev = parts.len() > 0 && parts[0].starts_with("/dev/");
+            let dev = !parts.is_empty() && parts[0].starts_with("/dev/");
             if parts.len() == 1 && dev {
                 flag = 1;
             } else if (parts.len() == 5 && flag == 1) || (parts.len() == 6 && dev) {

@@ -1,7 +1,7 @@
 pub enum ConnectionType {
-    SshAgent,
-    SshPrivateKey,
-    SshPassword,
+    Agent,
+    PrivateKey,
+    Password,
 }
 
 pub struct SshConnection<'a> {

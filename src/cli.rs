@@ -59,7 +59,7 @@ pub fn validate_parameters(cli: &Cli) -> SshConnection {
             None,
             Some(private_key_path),
             interval,
-            ConnectionType::SshPrivateKey,
+            ConnectionType::PrivateKey,
         );
     } else if let Some(password) = cli.password.as_deref() {
         return SshConnection::new(
@@ -68,16 +68,9 @@ pub fn validate_parameters(cli: &Cli) -> SshConnection {
             Some(password),
             None,
             interval,
-            ConnectionType::SshPassword,
+            ConnectionType::Password,
         );
     } else {
-        return SshConnection::new(
-            user,
-            hostname,
-            None,
-            None,
-            interval,
-            ConnectionType::SshAgent,
-        );
+        return SshConnection::new(user, hostname, None, None, interval, ConnectionType::Agent);
     }
 }

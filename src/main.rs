@@ -15,37 +15,30 @@ fn main() {
     match tcp {
         Ok(tcp) => {
             println!("Connected to the server");
-            let mut session = Session::new();
+            let session = Session::new();
             match session {
                 Ok(mut session) => {
                     session.set_tcp_stream(tcp);
                     session.handshake().expect("Handshake failed!");
 
-                    let auth: Result<(), ssh2::Error>;
-                    match ssh_connection.connection_type {
-                        ConnectionType::SshAgent => {
-                            auth = session.userauth_agent(ssh_connection.hostname);
-                        }
-                        ConnectionType::SshPrivateKey => {
-                            auth = session.userauth_pubkey_file(
-                                ssh_connection.user,
-                                None,
-                                std::path::Path::new(ssh_connection.private_key_path.unwrap()),
-                                None,
-                            )
-                        }
-                        ConnectionType::SshPassword => {
-                            auth = session.userauth_password(
-                                ssh_connection.user,
-                                ssh_connection.password.unwrap(),
-                            );
-                        }
-                    }
+                    let auth: Result<(), ssh2::Error> = match ssh_connection.connection_type {
+                        ConnectionType::Agent => session.userauth_agent(ssh_connection.hostname),
+                        ConnectionType::PrivateKey => session.userauth_pubkey_file(
+                            ssh_connection.user,
+                            None,
+                            std::path::Path::new(ssh_connection.private_key_path.unwrap()),
+                            None,
+                        ),
+                        ConnectionType::Password => session.userauth_password(
+                            ssh_connection.user,
+                            ssh_connection.password.unwrap(),
+                        ),
+                    };
                     match auth {
                         Ok(_) => {
                             println!("{}", session.authenticated());
                             let mut stats = Stats::default();
-                            match stats.get_all_stats(&mut session) {
+                            match stats.get_all_stats(&session) {
                                 Ok(()) => {}
                                 Err(e) => eprint!("Error: {}", e),
                             };
