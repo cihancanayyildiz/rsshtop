@@ -3,7 +3,6 @@ use crate::stats::*;
 use clap::Parser;
 use crossbeam_channel::{bounded, select, tick, Receiver};
 use ssh2::Session;
-use std::env;
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -19,7 +18,6 @@ fn ctrl_channel() -> Result<Receiver<()>, ctrlc::Error> {
     Ok(receiver)
 }
 fn main() {
-    env::set_var("RUST_BACKTRACE", "full");
     let cli = cli::Cli::parse();
     let ssh_connection = cli::validate_parameters(&cli);
     let tcp = TcpStream::connect(ssh_connection.hostname);

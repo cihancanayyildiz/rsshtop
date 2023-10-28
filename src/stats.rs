@@ -8,14 +8,12 @@ use std::io::Read;
 
 const ESC: &str = "\x1B[2J\x1B[1;1H"; // Clears the terminal.
 
-#[allow(dead_code)]
 pub struct FileSystemInfo {
     mount_point: String,
     used: u64,
     free: u64,
 }
 
-#[derive(Debug)]
 pub struct NetIntfInfo {
     ipv4: String,
     ipv6: String,
@@ -23,7 +21,7 @@ pub struct NetIntfInfo {
     tx: u64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct CpuRaw {
     user: u64,
     nice: u64,
@@ -37,7 +35,7 @@ pub struct CpuRaw {
     total: u64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct CpuInfo {
     user: f32,
     nice: f32,
