@@ -46,10 +46,7 @@ fn main() {
                             println!("{}", session.authenticated());
                             let mut stats = Stats::default();
                             match stats.get_all_stats(&mut session) {
-                                Ok(()) => {
-                                    //println!("mem_total: {}", stats.mem_total);
-                                    println!("{:?}", stats.fs_infos);
-                                }
+                                Ok(()) => {}
                                 Err(e) => eprint!("Error: {}", e),
                             };
                         }

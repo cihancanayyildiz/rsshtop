@@ -1,4 +1,4 @@
-use ssh2::{Channel, Session};
+use ssh2::Session;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
@@ -75,7 +75,7 @@ impl Stats {
     }
 
     pub fn get_uptime(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        let mut parts = run_command(session, "/bin/cat /proc/uptime")?;
+        let parts = run_command(session, "/bin/cat /proc/uptime")?;
         let uptime_vec = parts.trim_end().split(' ').collect::<Vec<_>>();
         if uptime_vec.len() == 2 {
             self.uptime = uptime_vec[0].parse::<f64>()?;
@@ -85,16 +85,12 @@ impl Stats {
     }
 
     fn get_hostname(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        channel.exec("/bin/hostname -f")?;
-        channel.read_to_string(&mut self.hostname)?;
-        let _ = channel.wait_close();
+        self.hostname = run_command(&session, "/bin/hostname -f")?;
         Ok(())
     }
 
     fn get_load(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        channel.exec("/bin/cat /proc/loadavg")?;
-        let mut parts = String::new();
-        channel.read_to_string(&mut parts)?;
+        let parts = run_command(session, "/bin/cat /proc/loadavg")?;
         let parts_vec = parts.split(' ').collect::<Vec<_>>();
 
         if parts_vec.len() == 5 {
@@ -104,15 +100,11 @@ impl Stats {
             self.running_procs = parts_vec[3].split('/').collect::<Vec<_>>()[0].to_string();
             self.total_procs = parts_vec[3].split('/').collect::<Vec<_>>()[1].to_string()
         }
-        println!("{}", parts);
-        let _ = channel.wait_close();
         Ok(())
     }
 
     fn get_mem_info(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        channel.exec("/bin/cat /proc/meminfo")?;
-        let mut parts = String::new();
-        channel.read_to_string(&mut parts)?;
+        let parts = run_command(session, "/bin/cat /proc/meminfo")?;
         let lines = parts.split('\n').collect::<Vec<_>>();
         for line in lines.iter() {
             let parts = line.split_whitespace().collect::<Vec<_>>();
@@ -138,10 +130,7 @@ impl Stats {
     }
 
     fn get_fs_info(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        channel.exec("/bin/df -B1")?;
-        let mut parts = String::new();
-        channel.read_to_string(&mut parts)?;
-
+        let parts = run_command(session, "/bin/df -B1")?;
         let lines = parts.split('\n').collect::<Vec<_>>();
 
         let mut flag = 0;
@@ -175,10 +164,8 @@ impl Stats {
     }
 
     fn get_interfaces(&mut self, session: &Session) -> Result<(), Box<dyn Error>> {
-        channel.exec("/bin/ip -o addr")?;
-        let mut lines = String::new();
-        channel.read_to_string(&mut lines)?;
-
+        let lines = run_command(session, "/bin/ip -o addr")?;
+        println!("{}", lines);
         Ok(())
     }
 }
@@ -186,6 +173,7 @@ impl Stats {
 fn run_command(session: &Session, command: &str) -> Result<String, Box<dyn Error>> {
     let mut channel = session.channel_session()?;
     let mut result = String::new();
+    channel.exec(command)?;
     channel.read_to_string(&mut result)?;
     Ok(result)
 }
